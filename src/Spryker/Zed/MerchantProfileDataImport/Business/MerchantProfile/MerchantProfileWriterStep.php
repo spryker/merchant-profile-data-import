@@ -5,7 +5,7 @@
  * For full license information, please view the LICENSE file that was distributed with this source code.
  */
 
-namespace Spryker\Zed\MerchantProfileDataImport\Business\Profile;
+namespace Spryker\Zed\MerchantProfileDataImport\Business\MerchantProfile;
 
 use Orm\Zed\Glossary\Persistence\SpyGlossaryKeyQuery;
 use Orm\Zed\Glossary\Persistence\SpyGlossaryTranslationQuery;
@@ -17,6 +17,7 @@ use Spryker\Zed\DataImport\Business\Model\DataImportStep\DataImportStepInterface
 use Spryker\Zed\DataImport\Business\Model\DataImportStep\LocalizedAttributesExtractorStep;
 use Spryker\Zed\DataImport\Business\Model\DataImportStep\PublishAwareStep;
 use Spryker\Zed\DataImport\Business\Model\DataSet\DataSetInterface;
+use Spryker\Zed\MerchantProfileDataImport\Business\MerchantProfile\DataSet\MerchantProfileDataSetInterface;
 use Spryker\Zed\Glossary\Dependency\GlossaryEvents;
 use Spryker\Zed\MerchantProfile\Dependency\MerchantProfileEvents;
 use Spryker\Zed\MerchantProfileDataImport\Business\Profile\DataSet\MerchantProfileDataSetInterface;
@@ -24,8 +25,6 @@ use Spryker\Zed\Url\Dependency\UrlEvents;
 
 class MerchantProfileWriterStep extends PublishAwareStep implements DataImportStepInterface
 {
-    protected const REQUIRED_DATA_SET_KEYS = [];
-
     /**
      * @param \Spryker\Zed\DataImport\Business\Model\DataSet\DataSetInterface $dataSet
      *
@@ -33,8 +32,6 @@ class MerchantProfileWriterStep extends PublishAwareStep implements DataImportSt
      */
     public function execute(DataSetInterface $dataSet): void
     {
-        $this->validateDataSet($dataSet);
-
         $idMerchant = $dataSet[MerchantProfileDataSetInterface::ID_MERCHANT];
         $merchantProfileEntity = SpyMerchantProfileQuery::create()
             ->filterByFkMerchant($idMerchant)
@@ -68,45 +65,47 @@ class MerchantProfileWriterStep extends PublishAwareStep implements DataImportSt
 
     /**
      * @param \Orm\Zed\MerchantProfile\Persistence\SpyMerchantProfile $merchantProfileEntity
-     * @param array $attributes
-     * @param int $idLocale
+     * @param array $glossaryKeyAttributes
      *
      * @return \Orm\Zed\MerchantProfile\Persistence\SpyMerchantProfile
      */
-    protected function saveGlossaryKeyAttributesForLocale(SpyMerchantProfile $merchantProfileEntity, array $attributes, int $idLocale): SpyMerchantProfile
+    protected function saveGlossaryKeyAttributes(SpyMerchantProfile $merchantProfileEntity, array $glossaryKeyAttributes): SpyMerchantProfile
     {
         $idMerchant = $merchantProfileEntity->getFkMerchant();
-        foreach ($attributes as $attributeName => $attributeValue) {
-            if (!$attributeValue) {
-                continue;
+        foreach ($glossaryKeyAttributes as $idLocale => $attributes) {
+            foreach ($attributes as $attributeName => $attributeValue) {
+                if (!$attributeValue) {
+                    continue;
+                }
+                if ($attributeName === MerchantProfileDataSetInterface::URL) {
+                    $this->addMerchantProfileUrl($merchantProfileEntity->getIdMerchantProfile(), $idLocale, $attributeValue);
+                    continue;
+                }
+
+                $merchantProfileEntity->fromArray([
+                    $attributeName => $this->generateMerchantGlossaryKey($attributeName, $idMerchant),
+                ]);
+
+                $glossaryFieldKey = $this->generateMerchantGlossaryKey($attributeName, $idMerchant);
+                $glossaryKeyEntity = SpyGlossaryKeyQuery::create()
+                    ->filterByKey($glossaryFieldKey)
+                    ->findOneOrCreate();
+
+                $glossaryKeyEntity->save();
+
+                $glossaryTranslationEntity = SpyGlossaryTranslationQuery::create()
+                    ->filterByFkGlossaryKey($glossaryKeyEntity->getIdGlossaryKey())
+                    ->filterByFkLocale($idLocale)
+                    ->findOneOrCreate();
+
+                $glossaryTranslationEntity
+                    ->setValue($attributeValue);
+
+                if ($glossaryTranslationEntity->isNew() || $glossaryTranslationEntity->isModified()) {
+                    $glossaryTranslationEntity->save();
+                }
+                $this->addPublishEvents(GlossaryEvents::GLOSSARY_KEY_PUBLISH, $glossaryKeyEntity->getIdGlossaryKey());
             }
-            if ($attributeName === MerchantProfileDataSetInterface::URL) {
-                $this->addMerchantProfileUrl($merchantProfileEntity->getIdMerchantProfile(), $idLocale, $attributeValue);
-                continue;
-            }
-            $merchantProfileEntity->fromArray([
-                $attributeName => $this->generateMerchantGlossaryKey($attributeName, $idMerchant),
-            ]);
-
-            $glossaryFieldKey = $this->generateMerchantGlossaryKey($attributeName, $idMerchant);
-            $glossaryKeyEntity = SpyGlossaryKeyQuery::create()
-                ->filterByKey($glossaryFieldKey)
-                ->findOneOrCreate();
-
-            $glossaryKeyEntity->save();
-
-            $glossaryTranslationEntity = SpyGlossaryTranslationQuery::create()
-                ->filterByFkGlossaryKey($glossaryKeyEntity->getIdGlossaryKey())
-                ->filterByFkLocale($idLocale)
-                ->findOneOrCreate();
-
-            $glossaryTranslationEntity
-                ->setValue($attributeValue);
-
-            if ($glossaryTranslationEntity->isNew() || $glossaryTranslationEntity->isModified()) {
-                $glossaryTranslationEntity->save();
-            }
-            $this->addPublishEvents(GlossaryEvents::GLOSSARY_KEY_PUBLISH, $glossaryKeyEntity->getIdGlossaryKey());
         }
 
         return $merchantProfileEntity;
