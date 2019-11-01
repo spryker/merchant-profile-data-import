@@ -5,27 +5,24 @@
  * For full license information, please view the LICENSE file that was distributed with this source code.
  */
 
-namespace Spryker\Zed\MerchantProfileDataImport\Business\Profile;
+namespace Spryker\Zed\MerchantProfileDataImport\Business\MerchantProfile;
 
 use Orm\Zed\Glossary\Persistence\SpyGlossaryKeyQuery;
 use Orm\Zed\Glossary\Persistence\SpyGlossaryTranslationQuery;
 use Orm\Zed\MerchantProfile\Persistence\SpyMerchantProfile;
 use Orm\Zed\MerchantProfile\Persistence\SpyMerchantProfileQuery;
 use Orm\Zed\Url\Persistence\SpyUrlQuery;
-use Spryker\Zed\DataImport\Business\Exception\InvalidDataException;
 use Spryker\Zed\DataImport\Business\Model\DataImportStep\DataImportStepInterface;
 use Spryker\Zed\DataImport\Business\Model\DataImportStep\LocalizedAttributesExtractorStep;
 use Spryker\Zed\DataImport\Business\Model\DataImportStep\PublishAwareStep;
 use Spryker\Zed\DataImport\Business\Model\DataSet\DataSetInterface;
 use Spryker\Zed\Glossary\Dependency\GlossaryEvents;
 use Spryker\Zed\MerchantProfile\Dependency\MerchantProfileEvents;
-use Spryker\Zed\MerchantProfileDataImport\Business\Profile\DataSet\MerchantProfileDataSetInterface;
+use Spryker\Zed\MerchantProfileDataImport\Business\MerchantProfile\DataSet\MerchantProfileDataSetInterface;
 use Spryker\Zed\Url\Dependency\UrlEvents;
 
 class MerchantProfileWriterStep extends PublishAwareStep implements DataImportStepInterface
 {
-    protected const REQUIRED_DATA_SET_KEYS = [];
-
     /**
      * @param \Spryker\Zed\DataImport\Business\Model\DataSet\DataSetInterface $dataSet
      *
@@ -33,8 +30,6 @@ class MerchantProfileWriterStep extends PublishAwareStep implements DataImportSt
      */
     public function execute(DataSetInterface $dataSet): void
     {
-        $this->validateDataSet($dataSet);
-
         $idMerchant = $dataSet[MerchantProfileDataSetInterface::ID_MERCHANT];
         $merchantProfileEntity = SpyMerchantProfileQuery::create()
             ->filterByFkMerchant($idMerchant)
@@ -76,6 +71,7 @@ class MerchantProfileWriterStep extends PublishAwareStep implements DataImportSt
     protected function saveGlossaryKeyAttributesForLocale(SpyMerchantProfile $merchantProfileEntity, array $attributes, int $idLocale): SpyMerchantProfile
     {
         $idMerchant = $merchantProfileEntity->getFkMerchant();
+
         foreach ($attributes as $attributeName => $attributeValue) {
             if (!$attributeValue) {
                 continue;
@@ -84,6 +80,7 @@ class MerchantProfileWriterStep extends PublishAwareStep implements DataImportSt
                 $this->addMerchantProfileUrl($merchantProfileEntity->getIdMerchantProfile(), $idLocale, $attributeValue);
                 continue;
             }
+
             $merchantProfileEntity->fromArray([
                 $attributeName => $this->generateMerchantGlossaryKey($attributeName, $idMerchant),
             ]);
@@ -106,6 +103,7 @@ class MerchantProfileWriterStep extends PublishAwareStep implements DataImportSt
             if ($glossaryTranslationEntity->isNew() || $glossaryTranslationEntity->isModified()) {
                 $glossaryTranslationEntity->save();
             }
+
             $this->addPublishEvents(GlossaryEvents::GLOSSARY_KEY_PUBLISH, $glossaryKeyEntity->getIdGlossaryKey());
         }
 
@@ -133,43 +131,6 @@ class MerchantProfileWriterStep extends PublishAwareStep implements DataImportSt
         }
 
         $this->addPublishEvents(UrlEvents::URL_PUBLISH, $urlEntity->getIdUrl());
-    }
-
-    /**
-     * @param \Spryker\Zed\DataImport\Business\Model\DataSet\DataSetInterface $dataSet
-     *
-     * @return void
-     */
-    protected function validateDataSet(DataSetInterface $dataSet): void
-    {
-        $this->validateSimpleRequiredDataSet($dataSet);
-    }
-
-    /**
-     * @param \Spryker\Zed\DataImport\Business\Model\DataSet\DataSetInterface $dataSet
-     *
-     * @return void
-     */
-    protected function validateSimpleRequiredDataSet(DataSetInterface $dataSet): void
-    {
-        foreach (static::REQUIRED_DATA_SET_KEYS as $requiredDataSetKey) {
-            $this->validateRequireDataSetByKey($dataSet, $requiredDataSetKey);
-        }
-    }
-
-    /**
-     * @param \Spryker\Zed\DataImport\Business\Model\DataSet\DataSetInterface $dataSet
-     * @param string $requiredDataSetKey
-     *
-     * @throws \Spryker\Zed\DataImport\Business\Exception\InvalidDataException
-     *
-     * @return void
-     */
-    protected function validateRequireDataSetByKey(DataSetInterface $dataSet, string $requiredDataSetKey): void
-    {
-        if (!$dataSet[$requiredDataSetKey]) {
-            throw new InvalidDataException(sprintf('"%s" is required.', $requiredDataSetKey));
-        }
     }
 
     /**
